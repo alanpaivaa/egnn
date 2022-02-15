@@ -196,11 +196,11 @@ class E_GCL(nn.Module):
         #    self.gru = nn.GRUCell(hidden_nf, hidden_nf)
 
 
-    def edge_model(self, source, target, radial, edge_attr):
+    def edge_model(self, source, target, radial, edge_attr):  # Retorna (20, 64)
         if edge_attr is None:  # Unused.
             out = torch.cat([source, target, radial], dim=1)
         else:
-            out = torch.cat([source, target, radial, edge_attr], dim=1)
+            out = torch.cat([source, target, radial, edge_attr], dim=1)  # (20, 131) radial e edge_attr tem informações repetidas
         out = self.edge_mlp(out)
         if self.attention:
             att_val = self.att_mlp(out)
@@ -231,7 +231,7 @@ class E_GCL(nn.Module):
     def coord2radial(self, edge_index, coord):
         row, col = edge_index
         coord_diff = coord[row] - coord[col]
-        radial = torch.sum((coord_diff)**2, 1).unsqueeze(1)
+        radial = torch.sum((coord_diff)**2, 1).unsqueeze(1)  # Distância euclideana entre a coordenadas dos nós
 
         if self.norm_diff:
             norm = torch.sqrt(radial) + 1
@@ -260,7 +260,6 @@ class E_GCL_vel(E_GCL):
           temp: Softmax temperature.
     """
 
-
     def __init__(self, input_nf, output_nf, hidden_nf, edges_in_d=0, nodes_att_dim=0, act_fn=nn.ReLU(), recurrent=True, coords_weight=1.0, attention=False, norm_diff=False, tanh=False):
         E_GCL.__init__(self, input_nf, output_nf, hidden_nf, edges_in_d=edges_in_d, nodes_att_dim=nodes_att_dim, act_fn=act_fn, recurrent=recurrent, coords_weight=coords_weight, attention=attention, norm_diff=norm_diff, tanh=tanh)
         self.norm_diff = norm_diff
@@ -273,7 +272,7 @@ class E_GCL_vel(E_GCL):
         row, col = edge_index
         radial, coord_diff = self.coord2radial(edge_index, coord)
 
-        edge_feat = self.edge_model(h[row], h[col], radial, edge_attr)
+        edge_feat = self.edge_model(h[row], h[col], radial, edge_attr)  # Equação 3, edge_feat é mij
         coord = self.coord_model(coord, edge_index, coord_diff, edge_feat)
 
 

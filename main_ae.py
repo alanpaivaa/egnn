@@ -8,6 +8,7 @@ from ae_datasets import d_selector, Dataloader
 import models
 import losess
 import eval
+import time
 
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
@@ -96,6 +97,8 @@ pr = eval.ProgressReporter(path=args.outf + '/' + args.exp_name, file_name='/out
 
 
 def train(epoch, loader):
+    start_time = time.time()
+
     lr_scheduler.step(epoch)
     model.train()
     res = {'epoch': epoch, 'loss': 0, 'bce': 0, 'kl': 0, 'kl_coords': 0, 'adj_err': 0, 'coord_reg': 0, 'counter': 0, 'wrong_edges': 0, 'gt_edges': 0, 'possible_edges': 0}
@@ -138,6 +141,9 @@ def train(epoch, loader):
         magnitudes['counter'] += 1
     error = res['wrong_edges'] / res['possible_edges']
     print('Train avg bce: %.4f \t KL %.4f \t KL_coords %.4f \tAdj_err %.4f \nWrong edges %d \t gt edges %d \t Possible edges %d \t Error %.4f' % (res['bce'] / res['counter'], res['kl'] / res['counter'], res['kl_coords'] / res['counter'], res['adj_err'] / res['counter'], res['wrong_edges'], res['gt_edges'], res['possible_edges'], error))
+
+    end_time = time.time()
+    print("Execution time: {:.6f}s".format(end_time - start_time))
 
 
 def test(epoch, loader):

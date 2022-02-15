@@ -6,6 +6,7 @@ import argparse
 from qm9 import utils as qm9_utils
 import utils
 import json
+import time
 
 parser = argparse.ArgumentParser(description='QM9 Example')
 parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N',
@@ -70,6 +71,8 @@ loss_l1 = nn.L1Loss()
 
 
 def train(epoch, loader, partition='train'):
+    start_time = time.time()
+
     lr_scheduler.step()
     res = {'loss': 0, 'counter': 0, 'loss_arr':[]}
     for i, data in enumerate(loader):
@@ -113,6 +116,10 @@ def train(epoch, loader, partition='train'):
 
         if i % args.log_interval == 0:
             print(prefix + "Epoch %d \t Iteration %d \t loss %.4f" % (epoch, i, sum(res['loss_arr'][-10:])/len(res['loss_arr'][-10:])))
+
+    end_time = time.time()
+    print("Execution time: {:.6f}s".format(end_time - start_time))
+
     return res['loss'] / res['counter']
 
 

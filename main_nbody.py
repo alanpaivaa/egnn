@@ -145,6 +145,8 @@ def main():
 
 
 def train(model, optimizer, epoch, loader, backprop=True):
+    start_time = time.time()
+
     if backprop:
         model.train()
     else:
@@ -154,9 +156,10 @@ def train(model, optimizer, epoch, loader, backprop=True):
 
     for batch_idx, data in enumerate(loader):
         batch_size, n_nodes, _ = data[0].size()
+        # return loc[frame_0], vel[frame_0], edge_attr, charges, loc[frame_T]
         data = [d.to(device) for d in data]
         data = [d.view(-1, d.size(2)) for d in data]
-        loc, vel, edge_attr, charges, loc_end = data
+        loc, vel, edge_attr, charges, loc_end = data ## Location start e location end (end é apenas pra calcular a loss)
 
         edges = loader.dataset.get_edges(batch_size, n_nodes)
         edges = [edges[0].to(device), edges[1].to(device)]
@@ -179,10 +182,11 @@ def train(model, optimizer, epoch, loader, backprop=True):
 
             loc_pred = model(nodes, loc.detach(), edges, edge_attr)
         elif args.model == 'egnn_vel':
-            nodes = torch.sqrt(torch.sum(vel ** 2, dim=1)).unsqueeze(1).detach()
+            nodes = torch.sqrt(torch.sum(vel ** 2, dim=1)).unsqueeze(1).detach()  # calcula norma das velocidades
             rows, cols = edges
-            loc_dist = torch.sum((loc[rows] - loc[cols])**2, 1).unsqueeze(1)  # relative distances among locations
-            edge_attr = torch.cat([edge_attr, loc_dist], 1).detach()  # concatenate all edge properties
+            loc_dist = torch.sum((loc[rows] - loc[cols])**2, 1).unsqueeze(1)  # relative distances among locations (distância euclidiana)
+            # loc_dist é a distância euclideana entre os nodes e também é edge_attr (concatenação abaixo)
+            edge_attr = torch.cat([edge_attr, loc_dist], 1).detach()  # concatenate all edge properties (modela como um grafo fully connected)
             loc_pred = model(nodes, loc.detach(), edges, vel, edge_attr)
         elif args.model == 'baseline':
             backprop = False
@@ -226,6 +230,9 @@ def train(model, optimizer, epoch, loader, backprop=True):
     else:
         prefix = ""
     print('%s epoch %d avg loss: %.5f' % (prefix+loader.dataset.partition, epoch, res['loss'] / res['counter']))
+
+    end_time = time.time()
+    print("Execution time: {:.6f}ms".format((end_time - start_time) * 1000))
 
     return res['loss'] / res['counter']
 
