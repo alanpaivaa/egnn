@@ -1,5 +1,6 @@
-from torch import nn
 import torch
+from torch import nn
+
 
 class MLP(nn.Module):
     """ a simple 4-layer MLP """
@@ -161,17 +162,18 @@ class E_GCL(nn.Module):
         self.tanh = tanh
         edge_coords_nf = 1
 
-
         self.edge_mlp = nn.Sequential(
             nn.Linear(input_edge + edge_coords_nf + edges_in_d, hidden_nf),
             act_fn,
             nn.Linear(hidden_nf, hidden_nf),
             act_fn)
+        # self.edge_mlp = nn.Linear(input_edge + edge_coords_nf + edges_in_d, hidden_nf)
 
         self.node_mlp = nn.Sequential(
             nn.Linear(hidden_nf + input_nf + nodes_att_dim, hidden_nf),
             act_fn,
             nn.Linear(hidden_nf, output_nf))
+        # self.node_mlp = nn.Linear(hidden_nf + input_nf + nodes_att_dim, output_nf)
 
         layer = nn.Linear(hidden_nf, 1, bias=False)
         torch.nn.init.xavier_uniform_(layer.weight, gain=0.001)
@@ -185,6 +187,7 @@ class E_GCL(nn.Module):
             coord_mlp.append(nn.Tanh())
             self.coords_range = nn.Parameter(torch.ones(1))*3
         self.coord_mlp = nn.Sequential(*coord_mlp)
+        # self.coord_mlp = layer
 
 
         if self.attention:
@@ -195,8 +198,15 @@ class E_GCL(nn.Module):
         #if recurrent:
         #    self.gru = nn.GRUCell(hidden_nf, hidden_nf)
 
-
-    def edge_model(self, source, target, radial, edge_attr):  # Retorna (20, 64)
+    def edge_model(self, source, target, radial, edge_attr):
+        """
+        Concatenates all input info and runs the edge mlp
+        Parameters:
+            source: Source node embeddings
+            target: Target nodes embeddings
+            radial: euclidean_distance^2
+            edge_attr: Edge attributes
+        """
         if edge_attr is None:  # Unused.
             out = torch.cat([source, target, radial], dim=1)
         else:
@@ -208,8 +218,15 @@ class E_GCL(nn.Module):
         return out
 
     def node_model(self, x, edge_index, edge_attr, node_attr):
+        """
+        Parameters:
+            x: Node embeddings
+            edge_index: Edges (rows, cols)
+            edge_attr: Edge features (m_ij)
+            node_attr: Node attributes
+        """
         row, col = edge_index
-        agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0))
+        agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0))  # Equation 5
         if node_attr is not None:
             agg = torch.cat([x, agg, node_attr], dim=1)
         else:
@@ -227,11 +244,18 @@ class E_GCL(nn.Module):
         coord += agg*self.coords_weight
         return coord
 
-
     def coord2radial(self, edge_index, coord):
+        """
+        Parameters:
+            edge_index: Edges (rows, cols)
+            coord: Coordinates vector
+        Return:
+            (euclidean distance) ^ 2
+            coordinate difference
+        """
         row, col = edge_index
         coord_diff = coord[row] - coord[col]
-        radial = torch.sum((coord_diff)**2, 1).unsqueeze(1)  # Distância euclideana entre a coordenadas dos nós
+        radial = torch.sum(coord_diff ** 2, 1).unsqueeze(1)
 
         if self.norm_diff:
             norm = torch.sqrt(radial) + 1
@@ -240,6 +264,12 @@ class E_GCL(nn.Module):
         return radial, coord_diff
 
     def forward(self, h, edge_index, coord, edge_attr=None, node_attr=None):
+        """
+        Parameters:
+            h: Node embeddings
+            edge_index: Edges in the format (2, _)
+            coord: Node positions
+        """
         row, col = edge_index
         radial, coord_diff = self.coord2radial(edge_index, coord)
 
@@ -267,16 +297,28 @@ class E_GCL_vel(E_GCL):
             nn.Linear(input_nf, hidden_nf),
             act_fn,
             nn.Linear(hidden_nf, 1))
+        # self.coord_mlp_vel = nn.Linear(input_nf, 1)
 
     def forward(self, h, edge_index, coord, vel, edge_attr=None, node_attr=None):
+        """
+        Parameters:
+            h: Node embeddings
+            edge_index: Edges in the format (2, _)
+            coord: Node positions
+            vel: Node velocities
+            edge_attr: Edge attributes
+        """
         row, col = edge_index
         radial, coord_diff = self.coord2radial(edge_index, coord)
 
-        edge_feat = self.edge_model(h[row], h[col], radial, edge_attr)  # Equação 3, edge_feat é mij
+        # Equation 3 (m_ij)
+        edge_feat = self.edge_model(h[row], h[col], radial, edge_attr)
+
+        # Equation 7
         coord = self.coord_model(coord, edge_index, coord_diff, edge_feat)
-
-
         coord += self.coord_mlp_vel(h) * vel
+
+        # Equation 5 and 6
         h, agg = self.node_model(h, edge_index, edge_feat, node_attr)
         # coord = self.node_coord_model(h, coord)
         # x = self.node_model(x, edge_index, x[col], u, batch)  # GCN

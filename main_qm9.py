@@ -73,8 +73,7 @@ loss_l1 = nn.L1Loss()
 def train(epoch, loader, partition='train'):
     start_time = time.time()
 
-    lr_scheduler.step()
-    res = {'loss': 0, 'counter': 0, 'loss_arr':[]}
+    res = {'loss': 0, 'counter': 0, 'loss_arr': []}
     for i, data in enumerate(loader):
         if partition == 'train':
             model.train()
@@ -83,13 +82,13 @@ def train(epoch, loader, partition='train'):
         else:
             model.eval()
 
-        batch_size, n_nodes, _ = data['positions'].size()
-        atom_positions = data['positions'].view(batch_size * n_nodes, -1).to(device, dtype)
-        atom_mask = data['atom_mask'].view(batch_size * n_nodes, -1).to(device, dtype)
+        batch_size, n_nodes, _ = data['positions'].size()  # Positions after the number of atoms is all zeros
+        atom_positions = data['positions'].view(batch_size * n_nodes, -1).to(device, dtype)  # Flattening positions
+        atom_mask = data['atom_mask'].view(batch_size * n_nodes, -1).to(device, dtype)   # Flattening atom mask
         edge_mask = data['edge_mask'].to(device, dtype)
         one_hot = data['one_hot'].to(device, dtype)
         charges = data['charges'].to(device, dtype)
-        nodes = qm9_utils.preprocess_input(one_hot, charges, args.charge_power, charge_scale, device)
+        nodes = qm9_utils.preprocess_input(one_hot, charges, args.charge_power, charge_scale, device)  # h0 node embeddings
 
         nodes = nodes.view(batch_size * n_nodes, -1)
         # nodes = torch.cat([one_hot, charges], dim=1)
@@ -103,6 +102,7 @@ def train(epoch, loader, partition='train'):
             loss = loss_l1(pred, (label - meann) / mad)
             loss.backward()
             optimizer.step()
+            lr_scheduler.step()
         else:
             loss = loss_l1(mad * pred + meann, label)
 

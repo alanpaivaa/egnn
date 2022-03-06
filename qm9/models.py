@@ -74,8 +74,7 @@ class EGNN(nn.Module):
             if self.node_attr:
                 h, _, _ = self._modules["gcl_%d" % i](h, edges, x, node_mask, edge_mask, edge_attr=edge_attr, node_attr=h0, n_nodes=n_nodes)
             else:
-                h, _, _ = self._modules["gcl_%d" % i](h, edges, x, node_mask, edge_mask, edge_attr=edge_attr,
-                                                      node_attr=None, n_nodes=n_nodes)
+                h, _, _ = self._modules["gcl_%d" % i](h, edges, x, node_mask, edge_mask, edge_attr=edge_attr, node_attr=None, n_nodes=n_nodes)
 
         h = self.node_dec(h)
         h = h * node_mask
