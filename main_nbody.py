@@ -1,12 +1,14 @@
 import argparse
-import torch
-import matplotlib.pyplot as plt
-from n_body_system.dataset_nbody import NBodyDataset
-from n_body_system.model import GNN, EGNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
-import os
-from torch import nn, optim
 import json
+import os
 import time
+
+import matplotlib.pyplot as plt
+import torch
+from torch import nn, optim
+
+from n_body_system.dataset_nbody import NBodyDataset
+from n_body_system.model import GNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N', help='experiment_name')
@@ -125,24 +127,22 @@ def main():
     best_val_loss = 1e8
     best_test_loss = 1e8
     best_epoch = 0
-    best_test_var = None
-    best_test_std = None
+    hs = None
     stats_idx = 0
     for epoch in range(0, args.epochs):
         train(model, optimizer, epoch, loader_train)
         if epoch % args.test_interval == 0:
             #train(epoch, loader_train, backprop=False)
-            val_loss, val_var, val_std = train(model, optimizer, epoch, loader_val, backprop=False)
-            test_loss, test_var, test_std = train(model, optimizer, epoch, loader_test, backprop=False)
+            val_loss, _ = train(model, optimizer, epoch, loader_val, backprop=False)
+            test_loss, test_hs = train(model, optimizer, epoch, loader_test, backprop=False)
             results['epochs'].append(epoch)
             results['losess'].append(test_loss)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_test_loss = test_loss
-                best_test_var = test_var
-                best_test_std = test_std
+                hs = test_hs
                 best_epoch = epoch
-                save_embedding_stats(best_test_var.mean(axis=0), best_test_std.mean(axis=0), "n_body_stats/epoch_%d.png" % epoch)
+                save_embedding_stats(hs, "n_body_stats/epoch_%d.png" % epoch)
                 stats_idx += 1
             print("*** Best Val Loss: %.5f \t Best Test Loss: %.5f \t Best epoch %d" % (best_val_loss, best_test_loss, best_epoch))
 
@@ -150,7 +150,7 @@ def main():
         with open(args.outf + "/" + args.exp_name + "/losess.json", "w") as outfile:
             outfile.write(json_object)
 
-    save_embedding_stats(best_test_var.mean(axis=0), best_test_std.mean(axis=0), "n_body_stats/final.png")
+    save_embedding_stats(hs, "n_body_stats/final.png")
 
     return best_val_loss, best_test_loss, best_epoch
 
@@ -162,8 +162,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
         model.eval()
 
     res = {'epoch': epoch, 'loss': 0, 'coord_reg': 0, 'counter': 0}
-    var = list()
-    std = list()
+    hs = list()
 
     for batch_idx, data in enumerate(loader):
         batch_size, n_nodes, _ = data[0].size()
@@ -197,8 +196,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
             loc_dist = torch.sum((loc[rows] - loc[cols])**2, 1).unsqueeze(1)  # relative distances among locations
             edge_attr = torch.cat([edge_attr, loc_dist], 1).detach()  # concatenate all edge properties
             h, loc_pred = model(nodes, loc.detach(), edges, vel, edge_attr)  # batch_size: 1 => shape: (5, 64) [1 embedding pra cada partícula]
-            var.append(torch.var(h, axis=0).detach())
-            std.append(torch.std(h, axis=0).detach())
+            hs.append(h.detach())
         elif args.model == 'baseline':
             backprop = False
             loc_pred = model(loc)
@@ -242,10 +240,8 @@ def train(model, optimizer, epoch, loader, backprop=True):
         prefix = ""
     print('%s epoch %d avg loss: %.5f' % (prefix+loader.dataset.partition, epoch, res['loss'] / res['counter']))
 
-    var = torch.stack(var)
-    std = torch.stack(std)
-
-    return res['loss'] / res['counter'], var, std
+    hs = torch.stack(hs)
+    return res['loss'] / res['counter'] , hs
 
 
 def main_sweep():
@@ -281,25 +277,28 @@ def main_sweep():
         print("Results for %d epochs and %d # training samples \n" % (epochs, tr_samples))
 
 
-def save_embedding_stats(var, std, filename, rows=2, cols=4, bar_width=0.25):
-    x = torch.arange(var.shape[0])
+def save_embedding_stats(hs, filename, rows=2, cols=4, bar_width=0.25):
+    h = hs[0]
+    mean = torch.mean(h, axis=0)
+    std = torch.std(h, axis=0) * (mean / torch.abs(mean))
+    x = torch.arange(std.shape[0])
     slice_size = int(len(x) / (rows * cols))
 
     subs = list()
-    for i in range(0, var.shape[0], slice_size):
+    for i in range(0, mean.shape[0], slice_size):
         sub_x = x[i:(i + slice_size)]
-        sub_var = var[i:(i + slice_size)]
+        sub_mean = mean[i:(i + slice_size)]
         sub_std = std[i:(i + slice_size)]
-        subs.append((sub_x, sub_var, sub_std))
+        subs.append((sub_x, sub_mean, sub_std))
 
     fig, axs = plt.subplots(rows, cols, figsize=(20, 10))
     fig.suptitle("Embedding Stats")
 
     for i in range(rows):
         for j in range(cols):
-            sub_x, sub_var, sub_std = subs.pop(0)
-            axs[i, j].bar(sub_x, sub_var, label='Variance', width=bar_width)
-            axs[i, j].bar(sub_x + bar_width, sub_std, label='Standard Deviation', width=bar_width)
+            sub_x, sub_mean, sub_std = subs.pop(0)
+            axs[i, j].bar(sub_x, sub_mean, label='Mean', width=bar_width, color='mediumseagreen')
+            axs[i, j].bar(sub_x + bar_width, sub_std, label='Standard Deviation', width=bar_width, color='salmon')
             axs[i, j].set_xticks(sub_x)
             axs[i, j].set_title("Embedding [%d:%d]" % (sub_x[0], sub_x[-1]))
             axs[i, j].legend()
