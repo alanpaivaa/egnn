@@ -85,7 +85,7 @@ class EGNN_vel(nn.Module):
         h = self.embedding(h)
         for i in range(0, self.n_layers):
             h, x, _ = self._modules["gcl_%d" % i](h, edges, x, vel, edge_attr=edge_attr)
-        return x
+        return h, x
 
 class RF_vel(nn.Module):
     def __init__(self, hidden_nf, edge_attr_nf=0, device='cpu', act_fn=nn.SiLU(), n_layers=4):
