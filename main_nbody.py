@@ -2,11 +2,11 @@ import argparse
 import json
 import os
 import time
-
 import matplotlib.pyplot as plt
 import torch
+import random
 from torch import nn, optim
-
+from datetime import datetime
 from n_body_system.dataset_nbody import NBodyDataset
 from n_body_system.model import GNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
 
@@ -58,7 +58,6 @@ parser.add_argument('--tanh', type=eval, default=False, metavar='N',
 
 time_exp_dic = {'time': 0, 'counter': 0}
 
-
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -73,6 +72,8 @@ except OSError:
     pass
 
 try:
+    stats_dir = 'n_body_stats/%s_%dlayers' % (datetime.now().strftime("%d%m%Y%H%M%S"), args.n_layers)
+    os.makedirs(stats_dir)
     os.makedirs(args.outf + "/" + args.exp_name)
 except OSError:
     pass
@@ -99,6 +100,13 @@ def main():
     dataset_test = NBodyDataset(partition='test', dataset_name="nbody_small")
     loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
+    # Generate batch plotting index
+    plot_batch_idx = random.randint(0, int(len(dataset_test) / args.batch_size))
+    os.makedirs('%s/batch_%d' % (stats_dir, plot_batch_idx))
+
+    # Generate trajectory plotting index
+    plot_trajectory_idx = random.randint(0, args.batch_size - 1)
+    os.makedirs('%s/trajectory_%d' % (stats_dir, plot_trajectory_idx))
 
     if args.model == 'gnn':
         model = GNN(input_dim=6, hidden_nf=args.nf, n_layers=args.n_layers, device=device, recurrent=True)
@@ -142,15 +150,13 @@ def main():
                 best_test_loss = test_loss
                 hs = test_hs
                 best_epoch = epoch
-                save_embedding_stats(hs, "n_body_stats/epoch_%d.png" % epoch)
+                save_epoch_stats(embeddings=hs, epoch=epoch, batch_idx=plot_batch_idx, trajectory_idx=plot_trajectory_idx)
                 stats_idx += 1
             print("*** Best Val Loss: %.5f \t Best Test Loss: %.5f \t Best epoch %d" % (best_val_loss, best_test_loss, best_epoch))
 
         json_object = json.dumps(results, indent=4)
         with open(args.outf + "/" + args.exp_name + "/losess.json", "w") as outfile:
             outfile.write(json_object)
-
-    save_embedding_stats(hs, "n_body_stats/final.png")
 
     return best_val_loss, best_test_loss, best_epoch
 
@@ -196,7 +202,8 @@ def train(model, optimizer, epoch, loader, backprop=True):
             loc_dist = torch.sum((loc[rows] - loc[cols])**2, 1).unsqueeze(1)  # relative distances among locations
             edge_attr = torch.cat([edge_attr, loc_dist], 1).detach()  # concatenate all edge properties
             h, loc_pred = model(nodes, loc.detach(), edges, vel, edge_attr)  # batch_size: 1 => shape: (5, 64) [1 embedding pra cada partícula]
-            hs.append(h.detach())
+            if not backprop:
+                hs.append(h.detach())
         elif args.model == 'baseline':
             backprop = False
             loc_pred = model(loc)
@@ -240,8 +247,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
         prefix = ""
     print('%s epoch %d avg loss: %.5f' % (prefix+loader.dataset.partition, epoch, res['loss'] / res['counter']))
 
-    hs = torch.stack(hs)
-    return res['loss'] / res['counter'] , hs
+    return res['loss'] / res['counter'], hs
 
 
 def main_sweep():
@@ -277,8 +283,28 @@ def main_sweep():
         print("Results for %d epochs and %d # training samples \n" % (epochs, tr_samples))
 
 
-def save_embedding_stats(hs, filename, rows=2, cols=4, bar_width=0.25):
-    h = hs[0]
+def save_epoch_stats(embeddings, epoch, batch_idx, trajectory_idx):
+    # Plot batch
+    embedding = embeddings[batch_idx]
+    save_embedding_stats(
+        h=embedding,
+        filename='%s/batch_%d/epoch_%d' % (stats_dir, batch_idx, epoch),
+        title="batch=%d epoch=%d" % (batch_idx, epoch)
+    )
+
+    # Plot trajectory
+    if trajectory_idx < int(embedding.shape[0] / 5):
+        j = trajectory_idx
+    else:
+        j = int(embedding.shape[0] / 5) - 1
+    save_embedding_stats(
+        h=embedding[j*5:(j+1)*5],
+        filename='%s/trajectory_%d/epoch_%d' % (stats_dir, trajectory_idx, epoch),
+        title="trajectory=%d batch=%d epoch=%d" % (trajectory_idx, batch_idx, epoch)
+    )
+
+
+def save_embedding_stats(h, filename, title, rows=2, cols=1, bar_width=0.4):
     mean = torch.mean(h, axis=0)
     std = torch.std(h, axis=0) * (mean / torch.abs(mean))
     x = torch.arange(std.shape[0])
@@ -291,17 +317,18 @@ def save_embedding_stats(hs, filename, rows=2, cols=4, bar_width=0.25):
         sub_std = std[i:(i + slice_size)]
         subs.append((sub_x, sub_mean, sub_std))
 
+    plt.close('all')
     fig, axs = plt.subplots(rows, cols, figsize=(20, 10))
-    fig.suptitle("Embedding Stats")
+    fig.suptitle(title)
 
     for i in range(rows):
         for j in range(cols):
             sub_x, sub_mean, sub_std = subs.pop(0)
-            axs[i, j].bar(sub_x, sub_mean, label='Mean', width=bar_width, color='mediumseagreen')
-            axs[i, j].bar(sub_x + bar_width, sub_std, label='Standard Deviation', width=bar_width, color='salmon')
-            axs[i, j].set_xticks(sub_x)
-            axs[i, j].set_title("Embedding [%d:%d]" % (sub_x[0], sub_x[-1]))
-            axs[i, j].legend()
+            axs[i].bar(sub_x, sub_mean, label='Mean', width=bar_width, color='mediumseagreen')
+            axs[i].bar(sub_x + bar_width, sub_std, label='Standard Deviation', width=bar_width, color='salmon')
+            axs[i].set_xticks(sub_x)
+            axs[i].set_title("Embedding [%d:%d]" % (sub_x[0], sub_x[-1]))
+            axs[i].legend()
 
     plt.savefig(filename, dpi=300)
 
