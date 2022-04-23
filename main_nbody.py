@@ -9,6 +9,7 @@ from torch import nn, optim
 from datetime import datetime
 from n_body_system.dataset_nbody import NBodyDataset
 from n_body_system.model import GNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
+from util.plot_util import save_epoch_locations
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N', help='experiment_name')
@@ -136,22 +137,36 @@ def main():
     best_test_loss = 1e8
     best_epoch = 0
     hs = None
+    locations = None
     stats_idx = 0
     for epoch in range(0, args.epochs):
         train(model, optimizer, epoch, loader_train)
         if epoch % args.test_interval == 0:
             #train(epoch, loader_train, backprop=False)
-            val_loss, _ = train(model, optimizer, epoch, loader_val, backprop=False)
-            test_loss, test_hs = train(model, optimizer, epoch, loader_test, backprop=False)
+            val_loss, _, _ = train(model, optimizer, epoch, loader_val, backprop=False)
+            test_loss, test_hs, test_locations = train(model, optimizer, epoch, loader_test, backprop=False)
             results['epochs'].append(epoch)
             results['losess'].append(test_loss)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_test_loss = test_loss
                 hs = test_hs
+                locations = test_locations
                 best_epoch = epoch
-                save_epoch_stats(embeddings=hs, epoch=epoch, batch_idx=plot_batch_idx, trajectory_idx=plot_trajectory_idx)
                 stats_idx += 1
+
+                # Save embedding stat plots
+                # save_epoch_stats(embeddings=hs, epoch=epoch, batch_idx=plot_batch_idx, trajectory_idx=plot_trajectory_idx)
+
+                # Plot location predictions
+                save_epoch_locations(
+                    locations=locations,
+                    epoch=epoch,
+                    batch_idx=plot_batch_idx,
+                    trajectory_idx=plot_trajectory_idx,
+                    stats_dir=stats_dir
+                )
+
             print("*** Best Val Loss: %.5f \t Best Test Loss: %.5f \t Best epoch %d" % (best_val_loss, best_test_loss, best_epoch))
 
         json_object = json.dumps(results, indent=4)
@@ -169,6 +184,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
 
     res = {'epoch': epoch, 'loss': 0, 'coord_reg': 0, 'counter': 0}
     hs = list()
+    locations = list()
 
     for batch_idx, data in enumerate(loader):
         batch_size, n_nodes, _ = data[0].size()
@@ -204,6 +220,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
             h, loc_pred = model(nodes, loc.detach(), edges, vel, edge_attr)  # batch_size: 1 => shape: (5, 64) [1 embedding pra cada partícula]
             if not backprop:
                 hs.append(h.detach())
+                locations.append(loc_pred.detach())
         elif args.model == 'baseline':
             backprop = False
             loc_pred = model(loc)
@@ -247,7 +264,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
         prefix = ""
     print('%s epoch %d avg loss: %.5f' % (prefix+loader.dataset.partition, epoch, res['loss'] / res['counter']))
 
-    return res['loss'] / res['counter'], hs
+    return res['loss'] / res['counter'], hs, locations
 
 
 def main_sweep():
