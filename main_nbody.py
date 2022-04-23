@@ -72,7 +72,7 @@ except OSError:
     pass
 
 try:
-    stats_dir = 'n_body_stats/%s_%dlayers' % (datetime.now().strftime("%d%m%Y%H%M%S"), args.n_layers)
+    stats_dir = 'n_body_stats/%s__model_%s__layers_%d__batch_size_%d' % (datetime.now().strftime("%d%m%Y%H%M%S"), args.model, args.n_layers, args.batch_size)
     os.makedirs(stats_dir)
     os.makedirs(args.outf + "/" + args.exp_name)
 except OSError:
