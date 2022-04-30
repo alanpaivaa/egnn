@@ -24,6 +24,14 @@ def save_epoch_node_embeddings_std(std, epoch, stats_dir, rows=2):
     plt.savefig(filename, dpi=300)
 
 
+def save_std_tensor(std, epoch, stats_dir, model_name, layers, nf):
+    std_dir = '%s/tensors' % stats_dir
+    make_dir_if_not_exists(std_dir)
+
+    filename = "%s/model_%s__layers_%d__nf_%d__epoch_%d.tensor" % (std_dir, model_name, layers, nf, epoch)
+    torch.save(std, filename)
+
+
 def save_epoch_locations(locations, epoch, batch_idx, trajectory_idx, stats_dir):
     locations_dir = '%s/locations' % stats_dir
     make_dir_if_not_exists(locations_dir)

@@ -8,7 +8,7 @@ from torch import nn, optim
 from datetime import datetime
 from n_body_system.dataset_nbody import NBodyDataset
 from n_body_system.model import GNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
-from util.plot_util import save_epoch_node_embeddings_std, save_epoch_locations
+from util.stats_util import save_epoch_node_embeddings_std, save_epoch_locations, save_std_tensor
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N', help='experiment_name')
@@ -163,6 +163,16 @@ def main():
                     batch_idx=batch_idx,
                     trajectory_idx=trajectory_idx,
                     stats_dir=stats_dir
+                )
+
+                # Save std tensor
+                save_std_tensor(
+                    std=std,
+                    epoch=epoch,
+                    stats_dir=stats_dir,
+                    model_name=args.model,
+                    layers=args.n_layers,
+                    nf=args.nf
                 )
 
             print("*** Best Val Loss: %.5f \t Best Test Loss: %.5f \t Best epoch %d" % (best_val_loss, best_test_loss, best_epoch))
