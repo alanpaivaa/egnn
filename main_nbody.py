@@ -8,7 +8,7 @@ from torch import nn, optim
 from datetime import datetime
 from n_body_system.dataset_nbody import NBodyDataset
 from n_body_system.model import GNN, Baseline, Linear, EGNN_vel, Linear_dynamics, RF_vel
-from util.plot_util import save_epoch_node_embeddings_mean_std, save_epoch_locations
+from util.plot_util import save_epoch_node_embeddings_std, save_epoch_locations
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N', help='experiment_name')
@@ -138,24 +138,22 @@ def main():
         if epoch % args.test_interval == 0:
             #train(epoch, loader_train, backprop=False)
             val_loss, _, _ = train(model, optimizer, epoch, loader_val, backprop=False)
-            test_loss, test_node_embeddings, test_locations = train(model, optimizer, epoch, loader_test, backprop=False)
+            test_loss, test_std, test_locations = train(model, optimizer, epoch, loader_test, backprop=False)
             results['epochs'].append(epoch)
             results['losess'].append(test_loss)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_test_loss = test_loss
-                node_embeddings = test_node_embeddings
+                std = test_std
                 locations = test_locations
                 best_epoch = epoch
                 stats_idx += 1
 
                 # Save embedding mean and std
-                save_epoch_node_embeddings_mean_std(
-                    embeddings=node_embeddings,
+                save_epoch_node_embeddings_std(
+                    std=std,
                     epoch=epoch,
-                    stats_dir=stats_dir,
-                    batch_idx=batch_idx,
-                    trajectory_idx=trajectory_idx
+                    stats_dir=stats_dir
                 )
 
                 # Plot location predictions
@@ -183,7 +181,7 @@ def train(model, optimizer, epoch, loader, backprop=True):
         model.eval()
 
     res = {'epoch': epoch, 'loss': 0, 'coord_reg': 0, 'counter': 0}
-    hs = list()
+    stds = list()
     locations = list()
 
     for batch_idx, data in enumerate(loader):
@@ -219,7 +217,10 @@ def train(model, optimizer, epoch, loader, backprop=True):
             edge_attr = torch.cat([edge_attr, loc_dist], 1).detach()  # concatenate all edge properties
             h, loc_pred = model(nodes, loc.detach(), edges, vel, edge_attr)  # batch_size: 1 => shape: (5, 64) [1 embedding pra cada partícula]
             if not backprop:
-                hs.append(h.detach())
+                h = h.view(-1, 5, args.nf)
+                std = torch.std(h, axis=1)
+                std = torch.mean(std, axis=0)
+                stds.append(std.detach())
                 locations.append(loc_pred.detach())
         elif args.model == 'baseline':
             backprop = False
@@ -264,7 +265,11 @@ def train(model, optimizer, epoch, loader, backprop=True):
         prefix = ""
     print('%s epoch %d avg loss: %.5f' % (prefix+loader.dataset.partition, epoch, res['loss'] / res['counter']))
 
-    return res['loss'] / res['counter'], hs, locations
+    if not backprop:
+        stds = torch.stack(stds)
+        stds = torch.mean(stds, axis=0)
+
+    return res['loss'] / res['counter'], stds, locations
 
 
 def main_sweep():
